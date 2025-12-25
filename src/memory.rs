@@ -10,7 +10,7 @@ impl Memory {
             data: [0; RAM_SIZE],
         }
     }
-    pub fn _clear(&mut self) {
+    pub fn clear(&mut self) {
         for byte in self.data.iter_mut() {
             *byte = 0;
         }

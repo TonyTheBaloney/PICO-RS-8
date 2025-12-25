@@ -1,4 +1,4 @@
-use std::time::{Instant};
+use std::time::Instant;
 
 use crate::PixelBuffer;
 use crate::{cpu::CPU, display::Display, memory::Memory};
@@ -8,7 +8,7 @@ use winit::dpi::{PhysicalSize, Size};
 use winit::event::{self, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::{WindowBuilder};
+use winit::window::WindowBuilder;
 
 pub struct EmulatorData {
     pub file_content: mpsc::Receiver<Vec<u8>>,
@@ -23,6 +23,7 @@ pub struct Emulator {
     pub display: Display,
     pub keys: [bool; 16], // Keypad state
     pub emulator_data: EmulatorData,
+    is_rom_loaded: bool,
 }
 
 const SCREEN_WIDTH: u32 = 64;
@@ -33,14 +34,20 @@ pub const ROM_ADDRESS: u16 = 0x200; // Address where ROM is loaded in memory
 
 const _CPU_FREQUENCY: u64 = 500; // CPU frequency in Hz
 
-
 impl Emulator {
     pub fn new(emulator_data: EmulatorData) -> Self {
         let memory: Memory = Memory::new();
         let display: Display = Display::new(SCREEN_WIDTH, SCREEN_HEIGHT);
         let cpu: CPU = CPU::new(ROM_ADDRESS as u16);
 
-        Emulator { cpu, memory, display, keys: [false; 16], emulator_data }
+        Emulator {
+            cpu,
+            memory,
+            display,
+            keys: [false; 16],
+            emulator_data,
+            is_rom_loaded: false,
+        }
     }
 
     pub fn set_font(&mut self, font: [u8; 80]) {
@@ -56,13 +63,18 @@ impl Emulator {
 
             return Err(Box::from("ROM size exceeds available memory"));
         }
+
+        self.memory.clear();
+        self.display.clear();
         for (i, &byte) in rom.iter().enumerate() {
             self.memory.data[ROM_ADDRESS as usize + i] = byte; // Load ROM starting at 0x200
         }
+        println!("ROM loaded successfully, size: {} bytes", rom.len());
+        self.is_rom_loaded = true;
         Ok(())
     }
 
-    pub fn get_font() -> [u8; 80]{
+    pub fn get_default_font() -> [u8; 80] {
         [
             0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
             0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -79,7 +91,7 @@ impl Emulator {
             0xF0, 0x80, 0x80, 0x80, 0xF0, // C
             0xE0, 0x90, 0x90, 0x90, 0xE0, // D
             0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
-            0xF0, 0x80, 0xF0, 0x80, 0x80  // F
+            0xF0, 0x80, 0xF0, 0x80, 0x80, // F
         ]
     }
 
@@ -89,7 +101,7 @@ impl Emulator {
         }
     }
 
-    pub fn run(&mut self, ) {
+    pub fn run(&mut self) {
         let cycle_duration = std::time::Duration::from_micros(2_000); // 500 Hz
         let mut last_cycle_time = Instant::now();
 
@@ -100,10 +112,34 @@ impl Emulator {
                 last_cycle_time = now;
             }
         }
-
     }
 
     pub fn cycle(&mut self) {
-        self.cpu.decode(&mut self.memory, &mut self.display, &self.keys);
+        if let Ok(rom_content) = self.emulator_data.file_content.try_recv() {
+            let _ = self.load_rom(rom_content.as_slice());
+        }
+
+        if let Ok(font_content) = self.emulator_data.font_file_content.try_recv() {
+            self.set_font(font_content.as_slice().try_into().unwrap());
+        }
+
+        if self.is_rom_loaded {
+            if let Ok(keys) = self.emulator_data.keys.try_recv() {
+                self.keys = keys;
+            }
+
+            self.cpu
+                .decode(&mut self.memory, &mut self.display, &self.keys);
+
+            let err: Result<(), mpsc::error::TrySendError<PixelBuffer>> = self
+                .emulator_data
+                .frame_buffer_sender
+                .try_send(PixelBuffer {
+                    pixels: self.display.pixels,
+                });
+            if err.is_err() {
+                println!("Error sending frame buffer to GUI. Error: {}", err.unwrap_err());
+            }
+        }
     }
 }

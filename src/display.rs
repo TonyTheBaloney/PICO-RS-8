@@ -3,7 +3,6 @@ use pixels::Pixels;
 const WIDTH: usize = 64;
 const HEIGHT: usize = 32;
 
-
 pub struct Display {
     pub width: u32,
     pub height: u32,
@@ -20,16 +19,6 @@ impl Display {
                 *pixel = false;
             }
         }
-    }
-    pub fn convert_to_buf(&self, render_buffer: &mut Pixels) {
-        let pixels = render_buffer.frame_mut();
-        for (y, row) in self.pixels.iter().enumerate() {
-            for (x, &pixel) in row.iter().enumerate() {
-                let index = (y * self.width as usize + x) * 4;
-                let color = if pixel { [0xFF, 0xFF, 0xFF, 0xFF] } else { [0x00, 0x00, 0x00, 0xFF] };
-                pixels[index..index + 4].copy_from_slice(&color);
-            }
-        }        
     }
 }
 
