@@ -1,18 +1,28 @@
 use std::time::{Instant};
 
+use crate::PixelBuffer;
 use crate::{cpu::CPU, display::Display, memory::Memory};
 use pixels::{Pixels, SurfaceTexture};
+use tokio::sync::mpsc;
 use winit::dpi::{PhysicalSize, Size};
 use winit::event::{self, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{WindowBuilder};
 
+pub struct EmulatorData {
+    pub file_content: mpsc::Receiver<Vec<u8>>,
+    pub font_file_content: mpsc::Receiver<Vec<u8>>,
+    pub frame_buffer_sender: mpsc::Sender<PixelBuffer>,
+    pub keys: mpsc::Receiver<[bool; 16]>,
+}
+
 pub struct Emulator {
     pub cpu: CPU,
     pub memory: Memory,
     pub display: Display,
     pub keys: [bool; 16], // Keypad state
+    pub emulator_data: EmulatorData,
 }
 
 const SCREEN_WIDTH: u32 = 64;
@@ -25,12 +35,12 @@ const _CPU_FREQUENCY: u64 = 500; // CPU frequency in Hz
 
 
 impl Emulator {
-    pub fn new() -> Self {
+    pub fn new(emulator_data: EmulatorData) -> Self {
         let memory: Memory = Memory::new();
         let display: Display = Display::new(SCREEN_WIDTH, SCREEN_HEIGHT);
         let cpu: CPU = CPU::new(ROM_ADDRESS as u16);
 
-        Emulator { cpu, memory, display, keys: [false; 16] }
+        Emulator { cpu, memory, display, keys: [false; 16], emulator_data }
     }
 
     pub fn set_font(&mut self, font: [u8; 80]) {
@@ -79,76 +89,19 @@ impl Emulator {
         }
     }
 
-    pub fn run(&mut self) {
-        let event_loop = EventLoop::new().unwrap();
-        event_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+    pub fn run(&mut self, ) {
+        let cycle_duration = std::time::Duration::from_micros(2_000); // 500 Hz
+        let mut last_cycle_time = Instant::now();
 
-        let scale: u32 = 30;
-        
-        let window = WindowBuilder::new()
-            .with_title("Chip-8 Emulator")
-            .with_inner_size(Size::new(Size::Physical(PhysicalSize::new(SCREEN_WIDTH * scale, SCREEN_HEIGHT * scale))))
-            .build(&event_loop)
-            .unwrap();
-
-        let window_size = window.inner_size();
-        let surface_texture = SurfaceTexture::new(window_size.width, window_size.height, &window);
-        let mut pixels: Pixels = pixels::Pixels::new(SCREEN_WIDTH, SCREEN_HEIGHT, surface_texture).unwrap();
-        let frame_time = std::time::Duration::from_millis(1000 / 700); // Target 60 FPS
-
-
-        let res = event_loop.run( |event: event::Event<()>, elwt: &winit::event_loop::EventLoopWindowTarget<()>| {
-            elwt.set_control_flow(ControlFlow::WaitUntil(Instant::now() + frame_time));
-            match event {
-                event::Event::WindowEvent { event: WindowEvent::Resized(size), .. } => {
-                    let _ = pixels.resize_surface(size.width, size.height);
-                }
-                event::Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                    println!("The close button was pressed; stopping");
-                    elwt.exit();
-                }
-                event::Event::WindowEvent { event: WindowEvent::RedrawRequested, .. } => {
-                    // Frame loop: only redraw the display
-                    self.cycle();
-
-                    self.display.convert_to_buf(&mut pixels);
-                    pixels.render().unwrap();
-                    
-                    window.request_redraw(); // Request the next frame
-                }
-                event::Event::WindowEvent { event: WindowEvent::KeyboardInput { event, .. }, .. } => { 
-                    match event.physical_key {
-                        PhysicalKey::Code(KeyCode::Digit1) => self.set_key(0x1, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::Digit2) => self.set_key(0x2, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::Digit3) => self.set_key(0x3, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::Digit4) => self.set_key(0x4, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::KeyQ) => self.set_key(0x5, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::KeyW) => self.set_key(0x6, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::KeyE) => self.set_key(0x7, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::KeyR) => self.set_key(0x8, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::KeyA) => self.set_key(0x9, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::KeyS) => self.set_key(0xA, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::KeyD) => self.set_key(0xB, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::KeyF) => self.set_key(0xC, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::KeyZ) => self.set_key(0xD, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::KeyX) => self.set_key(0xE, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::KeyC) => self.set_key(0xF, event.state == event::ElementState::Pressed),
-                        PhysicalKey::Code(KeyCode::Escape) => elwt.exit(),
-                        _ => (),
-                    }
-                    
-                }
-                
-                _ => (),
+        loop {
+            let now = Instant::now();
+            if now.duration_since(last_cycle_time) >= cycle_duration {
+                self.cycle();
+                last_cycle_time = now;
             }
-        });
-        if let Err(result) = res {
-            println!("Error running event loop: {}", result);
-            return;
         }
 
     }
-
 
     pub fn cycle(&mut self) {
         self.cpu.decode(&mut self.memory, &mut self.display, &self.keys);
