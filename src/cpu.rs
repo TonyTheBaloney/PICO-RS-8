@@ -4,6 +4,8 @@ use crate::memory::{Memory};
 use crate::display::Display;
 use crate::emulator::{FONT_ADDRESS};
 
+
+
 pub struct CPU {
     pub pc: u16, // Program Counter
     pub sp: u8,  // Stack Pointer
@@ -16,6 +18,8 @@ pub struct CPU {
 
 // In this mode, the CPU will set VX = VY when left and right shifting
 const SHIFT_SET_MODE: bool = true;
+// In this mode, the CPU will add VX to NNN in the BNNN instruction
+const JUMP_VX_MODE: bool = false;
 
 impl CPU {
     // Run a rom
@@ -174,8 +178,9 @@ impl CPU {
             }
             // 8XY1: Set VX to VX OR VY
             [0x8, _, _, 0x1] => {
-                let vx = nibbles[1] as usize;
+                let vx: usize = nibbles[1] as usize;
                 let vy = nibbles[2] as usize;
+                self.v[0xF] = 0;
                 if vx < 16 && vy < 16 {
                     self.v[vx] |= self.v[vy];
                 } else {
@@ -184,8 +189,9 @@ impl CPU {
             }
             // 8XY2: Set VX to VX AND VY
             [0x8, _, _, 0x2] => {
-                let vx = nibbles[1] as usize;
-                let vy = nibbles[2] as usize;
+                let vx: usize = nibbles[1] as usize;
+                let vy: usize = nibbles[2] as usize;
+                self.v[0xF] = 0;
                 if vx < 16 && vy < 16 {
                     self.v[vx] &= self.v[vy];
                 } else {
@@ -194,8 +200,9 @@ impl CPU {
             }
             // 8XY3: Set VX to VX XOR VY
             [0x8, _, _, 0x3] => {
-                let vx = nibbles[1] as usize;
-                let vy = nibbles[2] as usize;
+                let vx: usize = nibbles[1] as usize;
+                let vy: usize = nibbles[2] as usize;
+                self.v[0xF] = 0;
                 if vx < 16 && vy < 16 {
                     self.v[vx] ^= self.v[vy];
                 } else {
@@ -291,9 +298,17 @@ impl CPU {
 
             // BNNN: Jump to location NNN + V0.
             [0xB, _, _, _] => {
-                let nnn: u16 = ((nibbles[1] as u16) << 8) | ((nibbles[2] as u16) << 4) | nibbles[3] as u16;
-                let v0: u16 = self.v[0] as u16;
-                self.pc = nnn + v0;// This adjusts for increment later
+                let nnn: u16 = ((nibbles[1]  as u16) << 8) | ((nibbles[2] as u16) << 4) | nibbles[3] as u16;
+                
+                if JUMP_VX_MODE {
+                    let x: usize = nibbles[1] as usize;
+                    let v_x: u16 = self.v[x] as u16;
+                    self.pc = nnn + v_x - 2; // This adjusts for increment later    
+                }else {
+                    // Original CHIP-8 behavior
+                    let v0: u8 = self.v[0];
+                    self.pc = nnn + (v0 as u16) - 2; // This adjusts for increment later
+                }
             }
             // CXNN: Random
             [0xC, _, _, _] => {
@@ -311,13 +326,19 @@ impl CPU {
             // Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
             [0xD, _, _, _] => {
                 // Draw sprite at Vx, Vy with height N
-                let vx = nibbles[1] as usize;
-                let vy = nibbles[2] as usize;
-                let n = nibbles[3] as usize;
+                let vx: usize = nibbles[1] as usize;
+                let vy: usize = nibbles[2] as usize;
+                let n: usize = nibbles[3] as usize;
 
-                // Get the x and y coordinates
-                let x = self.v[vx] as usize % display.width as usize;
-                let y = self.v[vy] as usize % display.height as usize;
+                // Get the x and y coordinates on the screen
+                let mut x: usize = self.v[vx] as usize;
+                let mut y: usize = self.v[vy] as usize;
+
+                // Bounds check. If the sprite is drawn outside the display, we ignore it
+                if x >= display.width as usize || y >= display.height as usize {
+                    x %= display.width as usize;
+                    y %= display.height as usize;
+                }
 
                 // Set VF to 0
                 self.v[0xF] = 0;
@@ -374,25 +395,26 @@ impl CPU {
             }
             // FX0A: Wait for a key press, store the value of the key in Vx
             [0xF, _, 0x0, 0xA] => {
-                loop {
-                    let mut key: Option<u8> = None;
-                    for (i, &pressed) in keys.iter().enumerate() {
-                        if pressed {
-                            key = Some(i as u8);
-                            break;
-                        }
-                    }
-                    if key.is_some() {
-                        // Set VX to the key pressed
-                        let vx: usize = nibbles[1] as usize;
-                        if vx < 16 {
-                            self.v[vx] = key.unwrap();
-                        } else {
-                            println!("Invalid register index: {}", vx);
-                        }
+                let mut key: Option<u8> = None;
+                for (i, &pressed) in keys.iter().enumerate() {
+                    if pressed {
+                        key = Some(i as u8);
                         break;
                     }
                 }
+                if key.is_some() {
+                    // Set VX to the key pressed
+                    let vx: usize = nibbles[1] as usize;
+                    if vx < 16 {
+                        self.v[vx] = key.unwrap();
+                    } else {
+                        println!("Invalid register index: {}", vx);
+                    }
+                }else {
+                    // Repeat this instruction until a key is pressed
+                    self.pc -= 2;
+                }
+
             }
             // FX15: Sets the delay timer to VX
             [0xF, _, 0x1, 0x5] => {
@@ -451,22 +473,26 @@ impl CPU {
             }
             // FX55: Store registers V0 to VX in memory starting at address I
             [0xF, _, 0x5, 0x5] => {
-                let vx = nibbles[1] as usize;
+                let vx: usize = nibbles[1] as usize;
                 if vx < 16 {
                     for i in 0..=vx {
-                        memory.data[(self.i + i as u16) as usize] = self.v[i];
+                        memory.data[(self.i) as usize] = self.v[i];
+                        self.i += 1;
                     }
+                    // CHIP-8 Quirk: We do not reset I to its original value after operation
                 } else {
                     println!("Invalid register index: {}", vx);
                 }
             }
             // FX65: Read registers V0 to VX from memory starting at address I
             [0xF, _, 0x6, 0x5] => {
-                let vx = nibbles[1] as usize;
+                let vx: usize = nibbles[1] as usize;
                 if vx < 16 {
                     for i in 0..=vx {
-                        self.v[i] = memory.data[(self.i + i as u16) as usize];
+                        self.v[i] = memory.data[(self.i) as usize];
+                        self.i += 1;
                     }
+                    // CHIP-8 Quirk: We do not reset I to its original value after operation
                 } else {
                     println!("Invalid register index: {}", vx);
                 }

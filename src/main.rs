@@ -72,7 +72,7 @@ impl Pico8Emulator {
         emulator.set_font(Emulator::get_default_font());
         
 
-        let emulator_thread = thread::spawn(move || {
+        let emulator_thread: thread::JoinHandle<()> = thread::spawn(move || {
             loop {
                 emulator.cycle();
                 // Thread sleeping until we want to FPS sleep again
