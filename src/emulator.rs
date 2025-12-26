@@ -50,6 +50,14 @@ impl Emulator {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.cpu = CPU::new(ROM_ADDRESS as u16);
+        self.memory.clear();
+        self.display.clear();
+        self.keys = [false; 16];
+        self.is_rom_loaded = false;
+    }
+
     pub fn set_font(&mut self, font: [u8; 80]) {
         for (i, &byte) in font.iter().enumerate() {
             self.memory.data[FONT_ADDRESS as usize + i] = byte;
@@ -57,6 +65,7 @@ impl Emulator {
     }
 
     pub fn load_rom(&mut self, rom: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
+        self.is_rom_loaded = false;
         if rom.len() + ROM_ADDRESS as usize > self.memory.data.len() {
             // Return an error
             println!("ROM size exceeds available memory");
@@ -64,8 +73,8 @@ impl Emulator {
             return Err(Box::from("ROM size exceeds available memory"));
         }
 
-        self.memory.clear();
-        self.display.clear();
+        self.reset();
+
         for (i, &byte) in rom.iter().enumerate() {
             self.memory.data[ROM_ADDRESS as usize + i] = byte; // Load ROM starting at 0x200
         }
@@ -73,6 +82,8 @@ impl Emulator {
         self.is_rom_loaded = true;
         Ok(())
     }
+
+    
 
     pub fn get_default_font() -> [u8; 80] {
         [
@@ -131,15 +142,12 @@ impl Emulator {
             self.cpu
                 .decode(&mut self.memory, &mut self.display, &self.keys);
 
-            let err: Result<(), mpsc::error::TrySendError<PixelBuffer>> = self
+            let _: Result<(), mpsc::error::TrySendError<PixelBuffer>> = self
                 .emulator_data
                 .frame_buffer_sender
                 .try_send(PixelBuffer {
                     pixels: self.display.pixels,
                 });
-            if err.is_err() {
-                println!("Error sending frame buffer to GUI. Error: {}", err.unwrap_err());
-            }
         }
     }
 }

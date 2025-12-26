@@ -76,7 +76,6 @@ impl Pico8Emulator {
             loop {
                 emulator.cycle();
                 // Thread sleeping until we want to FPS sleep again
-                std::thread::sleep(std::time::Duration::from_micros(1000 / 10));
             }
         });
 
@@ -238,6 +237,8 @@ impl eframe::App for Pico8Emulator {
 
                     if ui.input(|i| i.key_pressed(key_code)) {
                         keys[i] = true;
+                    }else {
+                        keys[i] = false;
                     }
                 }
                 let _ = self.keys_sender.try_send(keys);
@@ -258,16 +259,21 @@ impl eframe::App for Pico8Emulator {
 
 impl Pico8Emulator {
     pub fn rom_selected(&mut self, file_path: PathBuf) {
+        self.selected_file = None;
         println!("Selected file: {}", file_path.display());
-        self.selected_file = Some(file_path.display().to_string());
+        let selected_file: String = file_path.display().to_string();
+        
 
         // Read the file content
         let file_content: Vec<u8> = std::fs::read(&file_path).unwrap_or_default();
         // Send the file content to the emulator
         let err: Result<(), mpsc::error::TrySendError<Vec<u8>>> =
             self.file_content_sender.try_send(file_content);
+        
         if err.is_err() {
             println!("Error sending file content to emulator");
+        }else {
+            self.selected_file = Some(selected_file);
         }
     }
 }
