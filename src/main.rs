@@ -105,32 +105,8 @@ impl Default for PixelBuffer {
     }
 }
 
-impl PixelBuffer {
-    pub fn clear(&mut self) {
-        for row in self.pixels.iter_mut() {
-            for pixel in row.iter_mut() {
-                *pixel = false;
-            }
-        }
-    }
-
-    pub fn set_pixel(&mut self, x: usize, y: usize, value: bool) {
-        if x < WIDTH && y < HEIGHT {
-            self.pixels[y][x] = value;
-        }
-    }
-
-    pub fn get_pixel(&self, x: usize, y: usize) -> bool {
-        if x < WIDTH && y < HEIGHT {
-            self.pixels[y][x]
-        } else {
-            false
-        }
-    }
-}
-
 impl eframe::App for Pico8Emulator {
-    fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         if self.requested_quit {
             self.emulator_thread.thread().unpark();
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);

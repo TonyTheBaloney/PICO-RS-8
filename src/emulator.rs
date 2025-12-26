@@ -1,14 +1,6 @@
-use std::time::Instant;
-
 use crate::PixelBuffer;
 use crate::{cpu::CPU, display::Display, memory::Memory};
-use pixels::{Pixels, SurfaceTexture};
 use tokio::sync::mpsc;
-use winit::dpi::{PhysicalSize, Size};
-use winit::event::{self, WindowEvent};
-use winit::event_loop::{ControlFlow, EventLoop};
-use winit::keyboard::{KeyCode, PhysicalKey};
-use winit::window::WindowBuilder;
 
 pub struct EmulatorData {
     pub file_content: mpsc::Receiver<Vec<u8>>,
@@ -104,25 +96,6 @@ impl Emulator {
             0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
             0xF0, 0x80, 0xF0, 0x80, 0x80, // F
         ]
-    }
-
-    pub fn set_key(&mut self, key: u16, pressed: bool) {
-        if key < 16 {
-            self.keys[key as usize] = pressed;
-        }
-    }
-
-    pub fn run(&mut self) {
-        let cycle_duration = std::time::Duration::from_micros(2_000); // 500 Hz
-        let mut last_cycle_time = Instant::now();
-
-        loop {
-            let now = Instant::now();
-            if now.duration_since(last_cycle_time) >= cycle_duration {
-                self.cycle();
-                last_cycle_time = now;
-            }
-        }
     }
 
     pub fn cycle(&mut self) {

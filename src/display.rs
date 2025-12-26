@@ -1,5 +1,3 @@
-use pixels::Pixels;
-
 const WIDTH: usize = 64;
 const HEIGHT: usize = 32;
 
