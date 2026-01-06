@@ -77,7 +77,9 @@ impl CPU {
             (opcode >> 4 & 0x0F) as u8, // Third nibble
             (opcode & 0x0F) as u8, // Fourth nibble
         ];
-        println!("Executing Opcode: {:04X} at PC: {:04X}", opcode, self.pc);
+        // This println runs every execution, but severely lags the emulator if printing (because turns out IO is slow)
+        // This should only be enabled whenever testing because it messes with key input and display timing
+        //println!("Executing Opcode: {:04X} at PC: {:04X}", opcode, self.pc);
         match nibbles {
             // 00E0: Clear the display
             [0x0, 0x0, 0xE, 0x0] => {
@@ -342,31 +344,37 @@ impl CPU {
 
                 // Set VF to 0
                 self.v[0xF] = 0;
-                for row in 0..n {
-                    if row > display.height as usize {
-                        break;
-                    }
-                    // Get the nth byte of sprite data counting from the memory address in the I register
-                    let sprite_byte: u8 = memory.data[(self.i as usize + row) % memory.data.len()];
 
-                    for col in 0..8 {
-                        // Check if the pixel is set at that col in the sprite byte
-                        let pixel: bool = ((sprite_byte >> (7 - col)) & 0x01) == 1;
-                        if col > display.width as usize {
-                            break;
-                        }
-                        // Sprites are XORed onto the existing screen.
-                        let display_x: usize = (x + col) % display.width as usize;
-                        let display_y: usize = (y + row) % display.height as usize;
-                        // If this causes any pixels to be erased, VF is set to 1, otherwise it is set to 0.
-                        if display.pixels[display_y][display_x] && pixel {
-                            self.v[0xF] = 1; // If our sprite pixel is on, and the display pixel is on the XOR will cause an overwrite
-                        }
-                        // XOR the pixel
-                        display.pixels[display_y][display_x] ^= pixel;
-                    }
+                self.v[0xF] = if display.draw_sprite(x, y, n, &memory.data[(self.i as usize)..(self.i as usize + n)]) {
+                    1
+                } else {
+                    0
+                };
+                // for row in 0..n {
+                //     if row > display.height as usize {
+                //         break;
+                //     }
+                //     // Get the nth byte of sprite data counting from the memory address in the I register
+                //     let sprite_byte: u8 = memory.data[(self.i as usize + row) % memory.data.len()];
+
+                //     for col in 0..8 {
+                //         // Check if the pixel is set at that col in the sprite byte
+                //         let pixel: bool = ((sprite_byte >> (7 - col)) & 0x01) == 1;
+                //         if col > display.width as usize {
+                //             break;
+                //         }
+                //         // Sprites are XORed onto the existing screen.
+                //         let display_x: usize = (x + col) % display.width as usize;
+                //         let display_y: usize = (y + row) % display.height as usize;
+                //         // If this causes any pixels to be erased, VF is set to 1, otherwise it is set to 0.
+                //         if display.pixels[display_y][display_x] && pixel {
+                //             self.v[0xF] = 1; // If our sprite pixel is on, and the display pixel is on the XOR will cause an overwrite
+                //         }
+                //         // XOR the pixel
+                //         display.pixels[display_y][display_x] ^= pixel;
+                //     }
                     
-                }
+                // }
             }
             // EX9E Skip next instruction if key with the value of Vx is pressed.
             [0xE, _, 0x9, 0xE] => {

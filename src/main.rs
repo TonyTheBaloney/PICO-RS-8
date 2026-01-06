@@ -66,9 +66,8 @@ impl Pico8Emulator {
         let mut emulator: emulator::Emulator = emulator::Emulator::new(emulator::EmulatorData {
             file_content: rom_content_channel.1,
             font_file_content: font_content_channel.1,
-            frame_buffer_sender: frame_buffer_channel.0,
             keys: keys_channel.1,
-        });
+        }, frame_buffer_channel.0);
         emulator.set_font(Emulator::get_default_font());
         
 

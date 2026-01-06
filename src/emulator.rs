@@ -5,7 +5,6 @@ use tokio::sync::mpsc;
 pub struct EmulatorData {
     pub file_content: mpsc::Receiver<Vec<u8>>,
     pub font_file_content: mpsc::Receiver<Vec<u8>>,
-    pub frame_buffer_sender: mpsc::Sender<PixelBuffer>,
     pub keys: mpsc::Receiver<[bool; 16]>,
 }
 
@@ -27,9 +26,9 @@ pub const ROM_ADDRESS: u16 = 0x200; // Address where ROM is loaded in memory
 const _CPU_FREQUENCY: u64 = 500; // CPU frequency in Hz
 
 impl Emulator {
-    pub fn new(emulator_data: EmulatorData) -> Self {
+    pub fn new(emulator_data: EmulatorData, pixel_buffer_sender: mpsc::Sender<PixelBuffer>) -> Self {
         let memory: Memory = Memory::new();
-        let display: Display = Display::new(SCREEN_WIDTH, SCREEN_HEIGHT);
+        let display: Display = Display::new(SCREEN_WIDTH, SCREEN_HEIGHT, pixel_buffer_sender);
         let cpu: CPU = CPU::new(ROM_ADDRESS as u16);
 
         Emulator {
@@ -114,13 +113,6 @@ impl Emulator {
 
             self.cpu
                 .decode(&mut self.memory, &mut self.display, &self.keys);
-
-            let _: Result<(), mpsc::error::TrySendError<PixelBuffer>> = self
-                .emulator_data
-                .frame_buffer_sender
-                .try_send(PixelBuffer {
-                    pixels: self.display.pixels,
-                });
         }
     }
 }
